@@ -1,0 +1,141 @@
+---
+title: "Kiriakos_MSDS664X0_Week4 Ensemble Methods"
+author: "Cathy Kiriakos"
+date: "April 4, 2020"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+## Ensemble Methods:  Using the Pima Diabetes Dataset 
+We will first pull down the Pima Indian Data which is availale from the mlbench package as shown below: 
+```{r,pima}
+#install.packages("mlbench")
+library(mlbench)
+data(PimaIndiansDiabetes2)
+```
+## 1) Descriptive Statistics: 
+Now we can start with some summary statistics on the dataset: 
+```{r desc, fig.show='asis'}
+summary(PimaIndiansDiabetes2)
+```
+We can see that our dataset has 9 variables, eight of which we will leverage as predictors: times pregnant (pregnant), glucose concentration (glucose), blood pressure (pressure), diastolic blood pressure (pressure), tricept skin fold thickness in mm (triceps), insulin measure (insulin), BMI (mas), diabetes pedigree function (diabetes), and age. Our data consists of 768 observations, and a binomial outcome variable which is if the patient has diabetes (positive/negative).
+
+Our first set of summary statistics shows us that we have a number of incomplete records, which can throw off our stats, so I'm going to update the data set to include only completle records.  The na.omit call performs a listwise deletion of incomplete records. 
+```{r,cleandata}
+pima<-na.omit(PimaIndiansDiabetes2)
+```
+We will get summary stats on our cleaned up data set with only complete records below: 
+```{r,summarystats}
+summary(pima)
+```
+Getting a quick view at our summary statistics, we can see that the ages of people sampled ranged between 21 and 81. Women who were sampled averaged three pregnancies;but the highest number was 17 which is really high. BMI ranged from normal 18 to 67 which is obese; we can also see that the sampled population's BMI averaged at 32 which in the obese range.  The average diastolic blood pressure 72, with a quick google search we can see that 80 is a normal range so we can say on average this sample population fell into a normal blood pressure range, but obviously there was at least one person with a really high value of 122, which according to healtline's Guide to Bloodpressure would suggest that they were in hypertensive crisis which is a bit troublesome.[1] We can see that out of complete records, 262 people were not diabetic and 130 were; which is a very high percentage of diabetes in the sample.  Now that we have a general idea of our sample popluation we will move forward with additional exploratory data analysis to get a good feel for the population subset.
+
+[1]https://www.healthline.com/health/diastole-vs-systole#blood-pressure-ranges
+
+The next step we will take is to make our dependent variable into a boolean value where positive = 1 and negative = 0.
+```{r,xAsFactor}
+pima$diabetes <- as.factor(pima$diabetes)
+```
+```{r}
+str(pima)
+```
+We can next put together a correlation matrix looking at all of our variables as shown below: 
+```{r, corr, eval=FALSE}
+cor(pima, method = "pearson", use = "complete.obs")
+```
+Some correlations are more obious, like glucose being highly correlated to diabetes.  We can also see higher correlations between aged and tricep skin measurement. The .25 correlation to pregnancy is somewhat surprising. 
+
+Moving on, we will use my favorite ggpairs, to get a visual on the correlations as shown below: 
+```{r,ggpairs}
+library(GGally)
+ggpairs(pima)
+```
+## 2-3) Bagging & Boosting Modeling Approach: 
+In an article/tutorial written by Jason Brownlee on Machine Learning Mastery at https://machinelearningmastery.com/evaluate-machine-learning-algorithms-with-r, he notes that the best way to choose an algorithm is a trial and error proces that is referred to as spot checking.  For this approach I will be leveraging his tutorial using the cleaned up diabetes data frame, along with the caret package.  
+
+We will first set up the control metric, this will be a  10-fold cross validation with three repeats.  We will set a random seed so that we can reset the random number generator before we train each algoritm.  We will designate the test metric to accuracy. 
+```{r,test}
+library(caret)
+control <- trainControl(method="repeatedcv", number=10, repeats = 3)
+seed<-7
+metric <-"Accuracy"
+```
+Now we can go on to building out our model, we will move onto using the spot checking approach mentioned earlier where we will look at varous models.  According to Jason Brownlee a "good rule of thumb" is to use a few of each types of model for binary classification.  We will also conduct data pre-processing, thsi allows us to ensure that the training data has the same scale; so we will set up a preprocesing call to center and scale to ensure for solid performance: 
+```{r, preprocess}
+preprocess <- c("center","scale")
+```
+Now we will move onto the algorithm spot check, where we will look at various models: 
+1) Logistic Regression:
+```{r,spot1}
+set.seed(seed)
+fit.glm <- train(diabetes~., data=pima, method="glm", trControl=control)
+```
+2) GLMNet Logistic regression: 
+```{r, glmnet}
+set.seed(seed)
+fit.glmnet <- train(diabetes~., data=pima, method="glmnet", metric=metric, preProc=c("center", "scale"), trControl=control)
+```
+3) SVM Radial: Support Vector Machines
+```{r, SVM}
+set.seed(seed)
+fit.svmRadial <- train(diabetes~., data=pima, method="svmRadial", metric=metric, preProc=c("center", "scale"), trControl=control, fit=FALSE)
+```
+4)Knn: K nearest neighbor
+```{r,knn}
+set.seed(seed)
+fit.knn <- train(diabetes~., data=pima, method="knn", metric=metric, preProc=c("center", "scale"), trControl=control)
+```
+5)Naive Bayes 
+```{r,NaiveBayes, include=FALSE, eval=FALSE}
+set.seed(seed)
+fit.nb <- train(diabetes~., data=pima, method="nb", metric=metric, trControl=control)
+```
+6) CART model decision tree: 
+```{r, cart}
+set.seed(seed)
+fit.cart <- train(diabetes~., data=pima, method="rpart", metric=metric, trControl=control)
+```
+7) C 5.0 Classification Model
+```{r, C5.0, include=FALSE, eval=FALSE}
+set.seed(seed)
+fit.c50 <- train(diabetes~., data=pima, method="C5.0", metric=metric, trControl=control)
+```
+8)Bagged CART Model 
+```{r, BaggedCART}
+set.seed(seed)
+fit.treebag <- train(diabetes~., data=pima, method="treebag", metric=metric, trControl=control)
+```
+9) Random Forest
+```{r,RandomForest}
+set.seed(seed)
+fit.rf <- train(diabetes~., data=pima, method="rf", metric=metric, trControl=control)
+```
+10) Stochastic Gradient Boosting (Generalized Boosting Modeling)
+```{r,SGB}
+set.seed(seed)
+fit.gbm <- train(diabetes~., data=pima, method="gbm", metric=metric, trControl=control, verbose=FALSE)
+```
+## 4) Modeling Comparison
+Now we have 10 algorithm types and now we can move along to selectng a model the script below will evaluate our models
+```{r,resultAnal,eval=FALSE}
+results <- resamples(list(logistic=fit.glm, glmnet=fit.glmnet,
+	svm=fit.svmRadial, knn=fit.knn, nb=fit.nb, cart=fit.cart, c50=fit.c50,
+	bagging=fit.treebag, rf=fit.rf, gbm=fit.gbm))
+```
+Now we can view the resutls in a nice table format below: 
+```{r,resTable,eval=FALSE, fig.show='asis'}
+summary(results)
+```
+A boxplot will provide a nice visualization of our models for this spot test: 
+```{r,boxplot,eval=FALSE, fig.show='asis'}
+bwplot(results)
+```
+We can do a dotplot comparison as well as shown below: 
+```{r, dotplot,eval=FALSE, fig.show='asis'}
+dotplot(results)
+```
+
+## Recomended Action: 
+So we can see that the GLM, Logistic, glmnet are solid models to leverage in the prediction of diabetes in the Pima dataset. 
+

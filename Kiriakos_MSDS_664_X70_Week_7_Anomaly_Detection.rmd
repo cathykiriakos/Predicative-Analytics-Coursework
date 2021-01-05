@@ -1,0 +1,150 @@
+---
+title: 'Kiriakos_MSDS 664_X70_Week 7: Anomaly Detection'
+author: "Cathy Kiriakos"
+date: "April 22, 2020"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+## Week 7: Anomaly Detection using Earthquake data 
+
+The data set that we will investigate is a listing of earthquakes from 1900-1998 whose magnitudes were greater than 7.0. The purpose of this investigation is to gain both an understanding of the data; and to identify anomalies in the data by leveraging anomaly detection packages in R. We will perform an exploratory data analysis, identify two or more outlier detection techniques, and follow it up by discussing our findings and providing a suggestion on best application. 
+
+We will first get started by loading our data: 
+```{r,load}
+eq <- read.csv("C:/Users/Cathy/Downloads/wk7_eq.csv",header = TRUE, colClasses=c("character","numeric"))
+```
+Now to get a quick view of our data: 
+```{r,summary}
+summary(eq)
+```
+```{r,headone}
+head(eq)
+```
+```{r,str}
+str(eq)
+```
+We will convert year to date time format: 
+```{r,datetime}
+library(lubridate)
+eq$year <- round_date(as.Date(eq$year, format='%Y'), unit='year')
+```
+Test to make sure that the date time format took: 
+```{r,testFormatting}
+str(eq)
+```
+```{r,headtwo}
+head(eq)
+```
+```{r,tail}
+tail(eq)
+```
+We can see that our data has two variables year & earthquakes, the data starts in 1900 and ends in 1998. Our maximum number of earthquakes is 41 and min is 6. 
+
+Now to get a quick visual on the data: 
+```{r,firstplot}
+plot(eq)
+```
+For good measure let's look at a histogram of our distribution, we can see where our outliers are in the upper bounds of the distribution.
+```{r,hist}
+hist(eq$earthquakes)
+```
+
+Now that we have a good visual on this data, we can move on to outlier detection techniques. For this investigation we will leverage the R grDevices package, so we will get started by calling that library: 
+```{r,grdevices}
+library(grDevices)
+```
+We will use the boxplot.stats, and get a view of its output, details on this function are below for reference: 
+
+boxplot.stats(x, coef = 1.5, do.conf=TRUE, do.out=TRUE)
+
+x	a numeric vector for which the boxplot will be constructed (NAs and NaNs are allowed and omitted).
+coef	this determines how far the plot ``whiskers'' extend out from the box. If coef is positive, the whiskers extend to the most extreme data point which is no more than coef times the interquartile coef from the box. A value of zero causes the whiskers to extend to the data extremes.
+do.conf,do.out	logicals; if FALSE, the conf or out component respectively will be empty in the result.
+```{r, boxplotstats}
+bp <- boxplot.stats(eq$earthquakes,coef = 1.5 ,do.conf = TRUE, do.out = TRUE)
+bp
+```
+Our stats output gave us a vector of length 5, containing the extreme of the lower whisker(6), the lower 'hinge' (15), the median (20), the upper 'hinge' (24), and the extreme of the upper whisker(36).  N tells us that we have 99 observations, and the conf provides us the the upper and lower extremes of the "notch." Last but not least out, provides us with the values that fall outside of the extremes of our wiskers where're we are only getting outliers on the high range of our distribution. 
+
+Moving on with our investigation of outliers in the earthquakes data set, we will leverage the envStats package in R and use ronserTest().  First for a dive into the functionality of the rest, it is designed to test for outliers that are either much smaller or much larger than the rest of the data. Rosner's approach is designed to avoid the problem of masking, where an outlier that is close in value to another outlier can go undetected. Rosner's test is appropriate only when the data, excluding the suspected outliers, are approximately normally distributed, and when the sample size is greater than or equal to 25.
+
+From our box plot investigation we have two outliers, for this test we will assign a couple more to K which is the number of outliers that we believe we have so I will use a K of 4
+```{r,envstats}
+library(EnvStats)
+rosnerTest(eq$earthquakes, k= 4, warn = FALSE)
+```
+What is interesting is that our Rosner Test is telling us that we do not have any outliers. But out boxplot is clearly stating that we have two at the top of our range. 
+```{r, boxplotView}
+boxplot(eq$earthquakes, outcol = "red")
+```
+We will move onto additional investigations of the data set to see if any detection agrees with our boxplot results. I had some issues installing the package the standard install.packages approach, so the script below installed the latest development version, let's see how it goes.
+
+```{r,loadLib, include=FALSE,eval=FALSE}
+install.packages("devtools")
+devtools::install_github("twitter/AnomalyDetection")
+library(AnomalyDetection)
+```
+We will get a look at anomalies using the anomalize package.  This package is designed for time series analysis, which is perfect for our times series of earthquakes throughout 1900-2000.
+
+Providing some background on the the methods we will utilize with the anomalize package in R: 
+
+The STL method uses the stl() function from the stats package. STL works very well in circumstances where a long term trend is present. The Loess algorithm typically does a very good job at detecting the trend. However, it circumstances when the seasonal component is more dominant than the trend, Twitter tends to perform better[1].
+
+The GESD method is used in Twitter's AnomalyDetection package. It involves an iterative evaluation of the Generalized Extreme Studentized Deviate test, which progressively evaluates anomalies, removing the worst offenders and recalculating the test statistic and critical value. The critical values progressively contract as more high leverage points are removed[1].
+
+1. Anomalize Methods.https://cran.r-project.org/web/packages/anomalize/vignettes/anomalize_methods.html#b.-gesd
+```{r,AnomalyDetectEq}
+library(dplyr)
+library(anomalize)
+library(tseries)
+library(ggplot2)
+eq.ts <- eq %>% as_tibble()
+eq.ts %>% 
+  time_decompose(earthquakes, method="stl", frequency="auto", trend="auto") %>%
+  anomalize(remainder, method = "gesd", alpha = 0.05, max_anoms = 0.2) %>%
+  plot_anomaly_decomposition()+
+  ggtitle("Alpha = 0.05")
+```
+Our output tells us that there are 7 outliers in the upper bands of our distribution. Seven is significantly more than the zero that we got with our rosner test, which makes me think that we may want to adjust our alpha increasing the bands to see how that compares with our rosner test results. 
+
+By adjusting our alpha we're telling the algorithm to be less sensitive. 
+```{r,adjustingAlpha}
+eq.ts %>% 
+  time_decompose(earthquakes, method="stl", frequency="auto", trend="auto") %>%
+  anomalize(remainder, method = "gesd", alpha = 0.025, max_anoms = 0.2) %>%
+  plot_anomaly_decomposition()+
+  ggtitle("Alpha = 0.025")
+```
+By changing our alpha to 0.025 we essentially lowered the sensitivity to the outliers, now having 5 outliers, which would have fallen into my anticipated number of anomalies when I conducted the rosner test. 
+
+So far we're taken a dive into the STL Decomposition methods; we can take a quick view to see how this method stack up against twitter decomposition. The Twitter method is a similar decomposition method to that used in Twitter's AnomalyDetection package. The Twitter method works identically to STL for removing the seasonal component. The main difference is in removing the trend, which is performed by removing the median of the data rather than fitting a smoother. The median works well when a long-term trend is less dominant that the short-term seasonal component. This is because the smoother tends to overfit the anomalies.[2]
+[2]Anomalize Methods https://cran.r-project.org/web/packages/anomalize/vignettes/anomalize_methods.html#b.-gesd
+```{r,twitter_decompostion}
+eq.ts %>% 
+  time_decompose(earthquakes, method="twitter", frequency="auto", trend="auto") %>%
+  anomalize(remainder, method = "gesd", alpha = 0.05, max_anoms = 0.2) %>%
+  plot_anomaly_decomposition()+
+  ggtitle("Alpha = 0.05")
+```
+Similar to our first test, the twitter decomposition method returned back no anomalies within the data.  We will change the alpha to ten to make it more sensitive - and see how that changes our results using twitter twitter decomposition: 
+```{r, twitterDecompositon0.01}
+eq.ts %>% 
+  time_decompose(earthquakes, method="twitter", frequency="auto", trend="auto") %>%
+  anomalize(remainder, method = "gesd", alpha = 0.1, max_anoms = 0.2) %>%
+  plot_anomaly_decomposition()+
+  ggtitle("Alpha = 0.1")
+```
+For good measure lets see how this model changes when we leverage the IQR method for our remainders
+```{r,IQRRemainder}
+eq.ts %>% 
+  time_decompose(earthquakes, method="twitter", frequency="auto", trend="auto") %>%
+  anomalize(remainder, method = "iqr", alpha = 0.1, max_anoms = 0.2) %>%
+  plot_anomaly_decomposition()+
+  ggtitle("Alpha = 0.1")
+```
+This gets us back to our 5 outliers, what interesting is that it's looking at ouliers on our lower range - which makes more sense than having none especially considering its clear to see that we've got some very low observations that do seem to fall outside of the norm. 
+
+Going with my initial intuition on this data frame after getting our initial view using a box plot; I feel that the most reasonable approach to identifying outliers in this particular time series, is to use the anomalize package, leveraging the twitter method, and applying the IQR method for our remainder, and a slightly more sensitive alpha of 0.1.  This approach yields results that make sense; obtaining outliers on the top and bottom our range.
+

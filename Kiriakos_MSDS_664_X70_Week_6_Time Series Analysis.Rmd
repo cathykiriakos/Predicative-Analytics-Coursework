@@ -1,0 +1,190 @@
+---
+title: 'Kiriakos_MSDS 664_X70_Week 6: Timeseries Analysis'
+author: "Cathy Kiriakos"
+date: "April 14, 2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Week 6: Timeseries Analysis 
+
+The following data set is the sales of new one-family houses, USA, from 1963. (United States Census Bureaus)
+
+We will start by loading our dataset as shown below, I did remove the top columns and convert the data that we'd be using for this timeseries analysis to csv as shown below: 
+```{r,data, include=FALSE}
+library(data.table)
+histCons <- read.csv('C:/Users/Cathy/Downloads/pricereg_cust.csv', header = TRUE)
+```
+For some exploratory analysis: 
+```{r,explore}
+str(histCons)
+```
+This reminded me that I need to delete some notes at the bottom of the data set: 
+```{r,clean}
+histCons<-histCons[-c(229,230),]
+tail(histCons)
+```
+Beautiful
+
+We can first get a look at the timeseries looking at the south with a plot, which will be useful to compare against the timeseries plot, we can see a strong linear relationship between time and housing price.
+```{r,plotSouth}
+plot(histCons)
+```
+The first step will be to create the timeseries, where we're analyzing the south and our time frequency is 4 indicating quarterly: 
+```{r,ts.plot}
+ts_South<-ts(histCons$South, start = c(1963,1), frequency = 4)
+```
+Now we will get a look at our time series plot to get an understanding of trending: 
+```{r,plotts}
+plot.ts(ts_South)
+```
+So were seeing a drastic shift from 1990 to rouglhy 1992; looking at the data frame it becomes apparant that as compared to prior trending with a continous upward swing,the early nineties had some backwards movements from year over year moving on average $10k or so.  This is likely the culprit of the drastic drop off in the time series plot. 
+
+Upon further investigation of these results I found in an Forbes article the following snippet that helps us understand that movement: 
+
+"Real home prices peaked in 1989, the recession hit in 1990, home prices fell 7% from the peak until the end of 1990, the recession ended in the spring of 1991 but real U.S. home prices continued to fade for years until they bottomed out in 1997, down 14% from the 1989 peak eight years earlier." https://www.forbes.com/sites/johnwake/2018/11/02/the-next-housing-bust/#1352e30918b7
+
+So this movement is not not an error. 
+
+We can see an overall continuing upward sloping trend for pricing values which makes sense. We can also see the impact of the great financial crisis with the slump in prices from 2008-2010. I think we are observing some seasonality due to an increaes in demand over the summer months,leading to increased prices; followed by a decline over winter months when houses are harder to sell, and sellers are willing to drop prices as a result of the decline in demand by buyers. 
+
+Since we have some seaonality in our data we can use the stl() function to seasonally decomopose our data: 
+```{r,seasondecomp}
+fit<-stl(ts_South, s.window = "period")
+plot(fit)
+```
+We may also want to manage the multiplicative effects by transforming into a series with additive effects, this will be our new time series as shown below, and we will run through and look at the seasonal decomposition after this log transformation of the time series: 
+```{r,logtransform}
+newTsSouth <- log(ts_South)
+fit2<-stl(newTsSouth, s.window = "period")
+plot(fit2)
+```
+This smoothed out our overall trending. It makes me wonder if the South's housing market was more impacted than others as a result of the dot com burst of the nineties. So we can make the same investigations looking at the Northeast.
+
+```{r}
+ts_NE<-ts(histCons$Northeast, start = c(1963,1), frequency = 4)
+plot(ts_NE)
+```
+What's interesting here is it looks like we're seeing a drop off more correlated with the 1987 recession; we still see the same run up due to inflation and interest rates running rampant in the early eighties; but we see the steep drop off sooner.  
+
+Lets continue to decompose our data in the east for seaonality, and continue on with investigations of the North Easts housing data as I'm seeing some more interesting trending; deeper declines due to the great recession in 2008-2010.  
+
+```{r,seasonality2}
+ts_NormNE <- log(ts_NE)
+fit3<-stl(ts_NormNE, s.window = "period")
+plot(fit3)
+```
+Now we can conduct an Augmented Dickey Fuller test on the timeseries. We will set our lags to 0 and with a trend and intercept. The Augmented Dickey Fuller test: null hypothesis is that the data are non-stationary and non-seasonal. 
+```{r, adf_test,eval=FALSE}
+library(tseries)
+adf.test(ts_NormNE,
+         alternative = c("stationary","explosive"),
+         k = trunc((length(x)-1)^(1/3)))
+```
+Our North East housing data is stationary, and important assumption for our timeseries analysis. 
+
+Moving on to our forecast, we will use the ETS package, standing for Error, Trend, Seasonal. The function automatically chooses a model by default using AIC, AICs or BIC. It can handle any combination of trend seasonality and damping. We will run our model and get a summary of our results below:
+```{r,forecastlib, include=FALSE}
+library(forecast)
+```
+
+```{r,forecast}
+fit.ets <- ets(ts_NormNE)
+summary(fit.ets)
+```
+The acd(resid(fit.ets)) looks good, we've got white noise: 
+```{r,acf}
+acf(resid(fit.ets))
+```
+Lets get perform the box test, which will indicate if we have independent or no correlation between successive errors. If not rejected (p-value greater than alpha), no need to improve the model. (aka “portmanteau” test – or Box-Pierce test)
+
+H0: the model does not exhibit lack of fit 
+H1: the model exhibits lack of fit
+
+```{r, boxTest}
+BoxTest <- Box.test(fit.ets$residuals, type = "Ljung-Box")
+BoxTest
+```
+ The p value is greater than 0.05 then the residuals are independent; this is what we want for the model to be correct
+
+```{r,plot}
+plot.ts(fit.ets$residuals)
+```
+Alright, now we can move forward to our 8 period forecast:
+```{r,8perForecast}
+pred.ets <- forecast(fit.ets, h=8)
+plot(pred.ets)
+```
+We can get a look at the accuracy of the model; the mean error has a farily low value summarizing the average of the errors, so that would be a good indicator of the model. Our Root Mean Squared Error is .34 
+
+For context of these values I obtained this information from Stack to outline what each of the results indicate: 
+
+ME: Mean Error -- The mean error is an informal term that usually refers to the average of -- all the errors in a set. An “error” in this context is an uncertainty in a measurement, -- or the difference between the measured value and true/correct value
+
+RMSE: Root Mean Squared Error
+2.1 MAE: Mean Absolute Error -- The MAE measures the average magnitude of the errors in a set of forecasts, -- without considering their direction. It measures accuracy for continuous variables. -- The RMSE will always be larger or equal to the MAE; -- the greater difference between them, the greater the variance in the individual errors -- in the sample. If the RMSE=MAE, then all the errors are of the same magnitude -- Both the MAE and RMSE can range from 0 to ∞. -- They are negatively-oriented scores: Lower values are better.
+
+MPE: Mean Percentage Error -- the mean percentage error (MPE) is the computed average of -- percentage errors by which forecasts of a model differ from actual values of the -- quantity being forecast.
+
+MAPE: Mean Absolute Percentage Error -- The MAPE, as a percentage, only makes sense for values where divisions and -- ratios make sense. It doesn't make sense to calculate percentages of temperatures -- MAPEs greater than 100% can occur. -- then this may lead to negative accuracy, which people may have a hard time understanding -- Error close to 0% => Increasing forecast accuracy -- Around 2.2% MAPE implies the model is about 97.8% accurate in predicting the next 15 observations.
+
+MASE: Mean Absolute Scaled Error -- Scale invariance: The mean absolute scaled error is independent of the scale of the data, -- so can be used to compare forecasts across data sets with different scales. -- ok for scales that do not have a meaningful 0, -- penalizes positive and negative forecast errors equally -- Values greater than one indicate that in-sample one-step forecasts from the naïve method perform better than the forecast values under consideration. -- When comparing forecasting methods, the method with the lowest MASE is the preferred method.
+
+ACF1: Autocorrelation of errors at lag 1.' -- it is a measure of how much is the current value influenced by the previous values in a time series. -- Specifically, the autocorrelation function tells you the correlation between points separated by various time lags -- the ACF tells you how correlated points are with each other, -- based on how many time steps they are separated by. That is the gist of autocorrelation, -- it is how correlated past data points are to future data points, for different values of the time separation. -- Typically, you'd expect the autocorrelation function -- to fall towards 0 as points become more separated (i.e. n becomes large in the above notation) -- because its generally harder to forecast further into the future from a given set of data. -- This is not a rule, but is typical. -- ACF(0)=1 (all data are perfectly correlated with themselves), -- ACF(1)=.9 (the correlation between a point and the next point is 0.9), ACF(2)=.4 -- (the correlati.
+```{r,accuracyEts}
+accuracy(fit.ets)
+```
+Now we will forecast out for 12 periods as shown below: 
+```{r,12PerForecast}
+pred.ets12 <- forecast(fit.ets, h=12)
+plot(pred.ets12)
+```
+Now we will plot forecast with forecast intervals as shown below:
+```{r,forcIntv}
+plot (forecast(fit.ets, level=c(50,80,95))) 
+```
+Now we can get a look at our residuals: 
+```{r,residplot}
+plot.ts(pred.ets$residuals)
+```
+We will now pick the ARIMA model (automatically) with auto.arima()
+```{r,AutoArima}
+arimaTsNe <- auto.arima(ts_NormNE)
+arimaTsNe
+```
+Now getting a look at our Box Test on the Arima model 
+```{r,ArimaBoxTest}
+BoxTest <- Box.test(arimaTsNe$residuals, type = "Ljung-Box")
+BoxTest
+```
+```{r,arimaBox}
+acf(resid(arimaTsNe))
+```
+Looking at the results of our Auto Arima model using the box test we can see that our p-values are low; because x-squared values increase as the sample autocorrelations of the residuals get larger; we're seeing a lack of independance. Given that it is still above 0.05; the model is still useful; but not as strong as our ETS model. 
+
+Last but not least we will get a look at our Holt-Winters model and see how the results stack up against Arima and our ETS: 
+```{r,HW}
+predHW <- HoltWinters(ts_NormNE)
+predHW
+```
+Our alpha, beta and gamma values are 0.84, 0, and 0.33.  The alpha our base value is farily high indicating that that a higher value is being placed on the most recent observations, which makes sense.  We wouldn't want to weight the 1980s uniformly with the 2020's when it comes to housing values. Beta, our trend value is zero, telling us that we do not want to weight recent trending with older trends, which also makes sense. Lastly our Gamma is our seasonal component, a value of 0.33 tells us that our model is taking seasonality into account but not weighting it very heavily. 
+```{r,hwPlot}
+plot(predHW)
+```
+```{r,HwFittedPlot}
+plot(fitted(predHW))
+```
+Now we can review the coefficients 
+```{r,hwCoef}
+coefficients(predHW)
+```
+
+From your analysis, what year do home prices reach its peak? Housing prices reach their peak at the hight of interest rates during the late eighties. We subsequently see the same level of decline following black friday 1987 market crash; where we see ebs and flows, including the second wave of declines observed in the great financial crisis of 2008. 
+
+What are your insights and/or suggested actionable decision? for continued modeling of housing prices and forecasting; I would reccomend leveraging the ETS model as it has provided the best fit in our analysis. 
+

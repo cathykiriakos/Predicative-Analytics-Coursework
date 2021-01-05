@@ -1,0 +1,148 @@
+---
+title: "Kiriakos_MSDS_664_X70_Week 3 lab"
+author: "Cathy Kiriakos"
+date: "March 27, 2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction: Week 3 Cereal Data Statistical Analysis 
+For this analysis we will dig into the cereal data set as provided by Carnegie Mellon Institute to see if we can find any interesting statistical relationships with the data.  The Cereal data set is a multivariate data set containing data on seventy common cereals, including all measurements of their nutritional values, and some detail on store placement.  We will dig into the details of the data to see what interesting relationships come out of our analysis.
+
+## Cereal Data Analysis
+For our week 3 lab we will explore the Cereal data set available via the CMU data sets, the data is available at http://lib.stat.cmu.edu/datasets/1993.expo/cereal and details of the data set are available at this link http://lib.stat.cmu.edu/datasets/1993.expo/
+
+The cereral data set is a multi-variate dataset describing seventy-seven commonly available breakfast cereals, based on the information now available on the newly-mandated F&DA food label.
+
+The variables of the dataset are listed below, in order. For convenience, we suggest that you use the variable name supplied in square brackets.
+Breakfast cereal variables:
+cereal name [name]
+manufacturer (e.g., Kellogg's):Manufacturers are represented by their first initial: A=American Home Food Products, G=General Mills, K=Kelloggs, N=Nabisco, P=Post, Q=Quaker Oats, R=Ralston Purina
+type (cold/hot) [type] 
+calories (number) [calories]
+protein(g) [protein]
+fat(g) [fat]
+sodium(mg) [sodium]
+dietary fiber(g) [fiber]
+complex carbohydrates(g) [carbo]
+sugars(g) [sugars]
+display shelf (1, 2, or 3, counting from the floor) [shelf]
+potassium(mg) [potass] 
+vitamins & minerals (0, 25, or 100, respectively indicating 
+'none added'; 'enriched, often to 25% FDA recommended'; '100% of 
+FDA recommended') [vitamins]
+weight (in ounces) of one serving (serving size) [weight]
+cups per serving [cups]
+
+
+## Load data set from website: 
+for this we will need the data.table library, and the below script will load into r studio
+```{r,load_Data}
+library(data.table)
+cereal <- fread('http://lib.stat.cmu.edu/datasets/1993.expo/cereal')
+head(cereal)
+```
+As you see our data table needs a little bit of clean up, so leveraging the infomraiton on the data set we will add column names as shown below: 
+```{r, colnames}
+colnames(cereal)<- c("Cereal_Name", "Manufacturer", "Type", "Calories", "Protien", "Fat", "Sodium", "Dietary", "Complex_Carbs", "Sugars", "Display", "Potassium", "Vit&Min", "Weight", "Cups")
+
+head(cereal)
+```
+Now we can remove any invalid rows from the dataset: 
+```{r}
+cereal <- cereal[Fat>=0 & Calories >=0 & Sodium >=0 & Complex_Carbs>=0 & Dietary >=0 & Display >0
+                                              & `Vit&Min`>=0 & Sugars >=0 & Potassium>=0,]
+cereal <-cereal[complete.cases(cereal)]
+```
+
+Now that it is in an easy to analyze format we can move forward with getting our summary stats to describe and understand our data. A good place to start is by calling summary to understand the details of each variable within the cereal data frame. Here we get a detailed look at each variable, telling us the type, min, max and man of each category. viewing the summary statistics allows us to help formulate questions about the data.
+```{r,summary stats}
+summary(cereal)
+```
+Looking at our summary statistics, it makes me wonder which cereals have the highest calorie content, and what is their associated sugar, protein, and fat content, and how that relates or doesn't relate to its shelf placement.  At getting a list in this manner would be best displayed by a pivot type summary, for this analysis we will use reshape and start with melting our data frame as shown below: 
+```{r, CalorieListing, eval=FALSE}
+library(reshape2)
+melt.cereal <-melt.data.frame(cereal, id.vars = c("Cereal_Name", "Calories","Protien", "Fat", "Sugars" ),measure.vars = "Display")
+head(melt.cereal)
+```
+```{r, eval=FALSE}
+tail(melt.cereal)
+```
+OK so now we have a good summary of the things we're interested in. Now we can ask some questions of the data, Like how many cereals are 130 calories or more: 
+```{r, CalGt110,eval=FALSE}
+library(dplyr)
+cerealMaxCals <- subset(melt.cereal, Calories >= 130) %>% arrange(Calories)
+cerealMaxCals
+```
+So we have 8 cereals that are greater than 130 calories, and they look like the more hearty ones, seem to have a higher protein content and tend to be located on display value 3 meaning the 3rd shelf up from the floor. 
+
+What also would be interesting to look into would be sugar content, by subsetting the data melted data frame to isolate sugar content greater than or equal to 12 grams>
+```{r, sugar, eval=FALSE}
+cerealMaxSugar <-subset(melt.cereal, Sugars >=12) %>% arrange(Sugars)
+cerealMaxSugar
+```
+Lets sort this data by calories and see if we can make an inference about calories and sugar content: 
+```{r,sortbyCal, eval=FALSE}
+cerealMaxSugar %>% arrange(Calories)
+```
+From the output above it seems like sugar content doesn't necessarily dictate the calorie value. Another observation is that the sugary kids oriented cereals tend to be located lower on the shelves - probably a marketing decision for the intended targeted audience.
+
+It might be interesting to see if sugar content and shelf placement have a relationship, so to get a visual on that we can plot this out using ggplot as shown below:
+
+```{r,plot}
+library(ggplot2)
+ggplot(data = cereal, aes(x = Sugars, y = Display, col = Manufacturer))+
+  geom_jitter(data = cereal, aes(Sugars, Display, col = Manufacturer))+
+  labs(x="Sugar", y="Display")+
+  geom_smooth(method = lm, se = FALSE, col = "blue")
+```
+ That plot above doesn't show a strong relationship between sugar content and shelf placement as previously thought. Bringing in the manufacturers by color we can see that placement by sugar content has no clear visual correlation shelf placement whereas shelf placement by manufacturer might be something more related because there is some clustering of our colored dots which are our manufacturers. 
+ 
+Another question that we can explore on this data set is, does the manufacturer have any bearing on sugar content. We can leverage the Regally package and ggpairs will give us a nice correlation matrix of all the variables that we're interested in: 
+```{r, corrMatrix, eval=FALSE}
+library(GGally)
+ggpairs(cereal,
+       c("Calories", "Sugars", "Protien", "Fat", "Display"),
+        upper = list(wrap = c(size = 10)),
+        lower = list(wrap = c(size = 10)))
+```
+
+ So looking at this matrix we can see that calorie content seems to be related to the display placement, so now we will put together an ANOVA with display being our dependent variable, and sugars and calories being our independent variables.
+```{r,aov}
+fit1 <- aov(Display ~ Sugars + Calories, data = cereal)
+summary(fit1)
+```
+ Above we can see that our degrees of freedom are equal to one for both variable, telling us that Sugars and Calories are significant in explaining the choice of display. But our P-values are not less than 0.05, telling us that we can not reject our null hypothesis that our beta is equal to zero - so unfortunately not strong enough to deduce a relationship. 
+ 
+The another analysis we can perform is the relationship of calories to the sugar and protein content in a given cereal, for this example our Calories will be our independent variable, and protein and sugar will be the independent variables
+```{r,aov2}
+fit2 <- aov(Calories ~ Sugars + Protien, data = cereal)
+summary(fit2)
+```
+ Alright a hypothesis that we have data to support.  Here we can see that our degrees of freedom are 1 for sugars and protein, and our P-value analysis is strong protein, and sugars are less than 0.05; telling us that we can reject our null hypothesis that beta = 0, telling us that Sugar and Protein are highly correlated to calories. 
+ 
+We can next get a look at our coefficients, and confidence intervals on our calorie to sugar and protein content analysis:
+```{r, coefficient}
+coefficients(fit2)
+```
+Now getting a look at the confidence intervals for the model parameters
+```{r,confint}
+confint(fit2, level = 0.95)
+```
+And to finally get a visualization on our model: 
+```{r,visLM, eval=FALSE}
+cereal %>%
+  ggplot(aes(Sugars + Protien, Calories))+
+           geom_point()
+```
+ 
+With our cereal analysis performed above while sugar content wasn't necessarily indicative of shelf placement.  We did get an understanding of how sugar and protein impacts the caloric value of the cereals in our data set. Using analysis of variance we can see that calories = sugar(2.871) + protein(3.961)
+
+```{r, finalanalysis}
+lm(Calories ~ Sugars + Protien, data = cereal)
+```
+

@@ -1,0 +1,164 @@
+---
+title: "MSDS_664_X70_Kappa Lab'"
+author: "Cathy Kiriakos"
+date: "March 22, 2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Predicative Analaysis: Week 2 Cohen's Kappa Statistic
+
+In any form of research and subsequent analysis of results, a high level of importance is placed on the consistency of of measurement (Stephanie 2014).  When we fail to consistently measure and provide consistent results it can create doubt or even result in fines or an inadvertant increase of risk exposure. Coming from personal experience, when my organization had determined they were not accounting for trapped liquidity at our foreign subsidiary banks in our calculation of a daily liquidity ratio; it resulted in heightened oversight and remediation plans from our central banking authority.  We had ran into a scenario were there was a disconnect in the way that we measured liquidity risk, as compared to similar institutions.  This is real world scenario where inconsistency  could have caused financial risk; and had caused increased oversight due to an inconsistency in measurement, which truly highlights the importance of reliability in measurement.     
+
+Cohen's Kappa Statistic is a way to measure inter-rater reliability or precision, this statistic allow researchers to understand if this same score is given to a particular data item across various raters (Stephanie 2014). There are limitations to this statistic, and it should only be leveraged in two scenarios as listed below: 
+
+1) Two raters rating one trial on one sample
+2) One rater rating two trials on one sample
+
+It is also important to understand how the statistic's results are measured; the Kappa Statistic results can vary from 0 to 1; 1 indicating perfect agreement, 0.41 to 0.60 indicating moderate agreement, and 0 indicating agreement equal to chance (Stephanie 2014). These guidelines must be tailored to their specific use cases, for an example moderate agreement might be ok in the case of financial analysis; whereas if you are leveraging the Kappa statistic in ratings of cancer screenings you'd want to see results closer to one (Stephanie 2014).
+
+As it relates directly to data science and specifically writing script to analyze inter rater reliability, the Cohen's Kappa statistic allows another layer of certainty to ensure reliability of your process.  In an article written on R-bloggers entitled K is for Cohen's Kappa, for programmers this statistic is important because the toolkit for analysis is limited in its approach, and agreement can happen by chance.  Cohen's Kappa statistic corrects for chance by accounting for the number of times raters would agree if they were to make decisions at random (R-bloggers 2018).
+
+Unweighted kappa is designed to measure agreement in nominal categorical ratings; whereas weighted Kappa statistics are designed to measure agreement in ordinal discrete ratings by taking the distance between ratings among the raters into account (Moonseong 2008). To elaborate further, the unweighted kappa statistic is a "function of observed chance-expected agreements in categorical ratings between raters" (Moonseong 2008). The result of the unweighted kappa statistic represents the difference in probability between the observed and chance expected agreement which is the numerator of the ratio; as it relates to the expected agreement which is our denominator (Moonseong 2008). The weighted kappa statistic is designed to represent the "seriousness of disagreement between raters" (Moonseong 2008). The method of determining the weighted kappa statistic involves determining the "absolute squared distance in ordinal ratings" (Moonseong 2008). The method of obtaining weighted kappa is similar to that of the unweighted kappa calculation; where it varies is in the assignment of weights that are used to represent the "degrees of disagreement in rating distances between raters on each individual subject," this in turn shows us the average of observed weights as compared to subjects as an indication of the agreement statistics. So at a very basic level, one would leverage the unweighted kappa statistic to measure agreement in results, whereas the weighted kappa statistic would be leveraged to determine the magnitude of disagreement in results. 
+
+For our examples calculating kappa statistic in R I will be leveraging a the K is for Cohen's Kappa from the R-bloggers website that can be accessed using the citation below.  The first step in conducting an analysis for kappa would be to generate randomized data.  Similar to the r-bloggers method I will be leveraging the example of a coin flip.  Below you cans see the randomly generated data to represent 50 coin flips, this will be done by creating a binomial distribution assuming a fair coin with a theta of 0.5.   Then we will leverage c-bind to put this data into a data frame titled "coins" as shown below:  
+
+```{r,generate_data}
+theta <- 0.5
+N <- 50
+flips1 <- rbinom(n = N, size = 1, prob = theta)
+flips2 <- rbinom(n=N, size = 1, prob = theta)
+coins <- cbind(flips2,flips1)
+```
+
+We will now install the "irr" package that is designed to measure simple agreement, "solve" is a required package that will also need installed: 
+```{r,kappaPackagesLib, eval = FALSE}
+install.packages("lpSolve")
+install.packages("irr")
+library(lpSolve)
+library(irr)
+```
+
+In the example we have set our tolerance to zero which is making the agree function to ensure that both columns of data have the exact same value for it to be considered as agreement. 
+```{r,percentageExample1}
+library(irr)
+agree(coins, tolerance = 0)
+```
+From the results above we cans see that out of 50 random coin flips, at a tolerance of 0 agreement is rounded up to 50%; which by any simple statistics would be close to what we'd get by chance. This example shows us the problem with using percent agreement.  So now we can compare Cohen's Kappa versus our results above: 
+```{r,kappaExample1}
+kappa2(coins)
+```
+With our results above we can see that our Kappa value is negative, which tells us that we are doing worse than chance and would indicate that if we were not using randomly generated data and that the code book poorly defined and not defining my raters; or that I should retrain my raters (r-bloggers 2018)
+
+Trying this out with a bigger data set I leveraged a tutorial from datanovia, leveraging the vcd package to get weighed and unweighted kappa stat results from a larger data frame.  This tutorial also offers insight into having more than two raters which we will elaborate in the script below: 
+
+First we will install VCD
+```{r, VCDPack, eval=FALSE}
+install.packages("vcd")
+```
+```{r,vcd_lib}
+library(vcd )
+```
+In this example we will create a data frame that will show diagnoses by two doctors with 5 categories of diagnoses
+```{r,dataDiagnoses}
+diagnoses <- as.table(rbind(
+  c(7, 1, 2, 3, 0), c(0, 8, 1, 1, 0),
+  c(0, 0, 2, 0, 0), c(0, 0, 0, 1, 0),
+  c(0, 0, 0, 0, 4)
+  ))
+categories <- c("GERD", "Celiacs","Diverticulitus", "Colitus", "IBS")
+dimnames(diagnoses) <- list(Doctor1 = categories, Doctor2 = categories)
+
+diagnoses
+```
+Now we will calculate kappa for two raters using the VCD package which provides us with weighed and unweighted kappa values: 
+```{r,kappa_Round2}
+res.k <- Kappa(diagnoses)
+res.k 
+```
+So with our results shown above we can see that our unweighted kappa statistic is 0.65 which falls into the good strength of consistency of results. Confirming our results we can see that our p-value is less than 0.05% telling us that our calculated kappa is significantly different from zero. To gain further insight on these results we should run our confidence intervals, showing that our results fall within a reasonable upper and lower bound of our bell curve: 
+```{r,confidence}
+confint(res.k)
+```
+Precision is an evaluation metric that allows for us to understand the performance providing us with a metric that helps us understand the fraction of correct predictions for a certain class. Recall will tell us the fractions of instances class that were correctly predicted (Belik, Gauher 2016). 
+
+Leveraging an example from Computing Classification Evaluation Metrics in R, we will start by creating a confusion matrix for our data as shown below. This will provide us with a tabular summary of actual class versus predicted class; in this example we are using 100 instances which are assigned to an a, b, or c class (Belik, Gauher 2016). 
+```{r,confusionMatrix}
+set.seed(0)
+ actual = c('a','b','c')[runif(100, 1,4)] # actual labels
+ predicted = actual # predicted labels
+ predicted[runif(30,1,100)] = actual[runif(30,1,100)]  # introduce incorrect predictions
+ cm = as.matrix(table(Actual = actual, Predicted = predicted)) # create the confusion matrix
+ cm
+```
+Now we will create variables that are required to compute our evaluation metrics (Belik, Gauher 2016)
+n = number of instances
+nc = number of classes 
+diage = number of correctly classified instances per class 
+rowsums = number of instances per class 
+colsums = number of predictions per class 
+p = distribution of instances over the actual classes
+q = distribution of instances over the predicted classes 
+
+```{r,variables}
+ n = sum(cm) 
+ nc = nrow(cm)
+ diag = diag(cm) 
+ rowsums = apply(cm, 1, sum) 
+ colsums = apply(cm, 2, sum)
+ p = rowsums / n 
+ q = colsums / n 
+```
+
+Now we can get a look at our precision and recall metrics below,  the F-1 score is the harmonic mean/weighted average of precision and recall (Belik, Gauher 2016): 
+```{r, precision}
+precision <- diag/colsums
+recall <- diag/rowsums
+f1 <- 2*precision*recall / (precision + recall)
+```
+Putting this into a data frame to easily view our results: 
+```{r,dfprecision_recall}
+dfPR <- data.frame(precision,recall,f1)
+dfPR
+```
+Evaluating our metrics we can see for this confusion matrix our precision and recall values are within 0.8 - 0.9 range for classes a,b, and c with a perfect score of 1 - means that our results are high or fairly precise and that we can trust the consistency. To answer the question of values we prefer, it would be those closes to our perfect score of 1 (Belik, Gauher 2016).
+
+Accuracy is another measure that we can leverage, and tells us the fraction of instances that are classified correctly.  An example of the accuracy calculation is shown below (Belik, Gauher 2016) 
+```{r, accuracy}
+accuracy <- sum(diag)/n
+accuracy
+```
+Again showing us a high score, and further validating this model. 
+
+An additional metric that can be leveraged is Macro-averaged metrics; this take the per-class metrics and averages them over the classes (Belik, Gauher 2016)
+
+```{r,MacroAveraged}
+macroPrecision = mean(precision)
+macroRecall = mean(recall)
+macroF1 = mean(f1)
+
+dfMP<- data.frame(macroPrecision, macroRecall, macroF1)
+dfMP
+```
+
+Reliability through consistent results within studies is a necessary prerequisite of any study.  We have learned how leveraging Cohen's Kappa statistic can provide certainty in results of programming by testing results to ensure commonality among results is not due to chance, but rather a sound model.  By leveraging additional statistics such as precision, accuracy, recall and macro averaged metrics we can further evaluate our model to ensure consistency of our results, which is incredibly important when applied to real-world scenarios to ensure confidence in our audience, and reduce error or inconsistency in our results. With the use of R we can access a number of packages to perform these types of analyses; in the examples shown above VCD and IRR were leveraged, but Carat and ROCR are also additional packages that can be leveraged for analyses that involve calculating kappa, reliability, accuracy and recall adding to our tool kit in R to ensure consistency.
+
+## Citations 
+
+Stephanie.Statistics How To: Cohen's Kappa Statistic December 8, 2014. https://www.statisticshowto.datasciencecentral.com/Cohen's-kappa-statistic/
+
+K is for Cohen's Kappa. R-bloggers.April 12, 2018 https://www.r-bloggers.com/k-is-for-Cohen's-kappa/
+
+Heo, Moonseong (2008) "Utility of Weights for Weighted Kappa as a Measure of Interrater Agreement on Ordinal Scale," Journal of
+Modern Applied Statistical Methods: Vol. 7 : Iss. 1 , Article 17 retrieved from  https://digitalcommons.wayne.edu/cgi/viewcontent.cgi?article=1432&context=jmasm
+
+Mielke, Paul W.; Berry, Kenneth J.; Johnston, Janis E. Unweighted and Weighted Kappa as Measures of Agreement for Multiple Judges https://www.questia.com/library/journal/1P3-1874986591/unweighted-and-weighted-kappa-as-measures-of-agreement
+
+Cohen's Kappa in R: For Two Categorical Variableshttps://www.datanovia.com/en/lessons/Cohen's-kappa-in-r-for-two-categorical-variables/
+
+Said Bleik, Shaheen Gauher. Computing Classification Evaluation Metrics in R. March 11, 2016. https://blog.revolutionanalytics.com/2016/03/com_class_eval_metrics_r.html
+
+Jason Brownlee. How to Calculate Precision, Recall, and F-Measure for Imbalanced Classification. January 3, 2020 https://machinelearningmastery.com/precision-recall-and-f-measure-for-imbalanced-classification/

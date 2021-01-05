@@ -1,0 +1,270 @@
+---
+title: "Kiriakos_MSDS_664_X70_Week 8 Deep Learning"
+author: "Cathy Kiriakos"
+date: "April 29, 2020"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Week 8: Deep Learning using the UCI Machine Learning Repository: Breast Cancer Data Set 
+This week we will take a dive into deep learning using the UCI Machine Learning Breast Cancer data set and the R deep learning package H20 to train our data set.H20 is a popular machine learning application that has the ability to leverage many machine learning algorithms including Bayes, linear and logistic regression, and K-means clustering.   
+
+We will first start by installing H20 from http://h2o-release.s3.amazonaws.com/h2o/rel-zahradnik/2/index.html as the cran release was incompatable with R version 4.0. 
+```{r,h20install, include=FALSE, eval=FALSE}
+
+# The following two commands remove any previously installed H2O packages for R.
+if ("package:h2o" %in% search()) { detach("package:h2o", unload=TRUE) }
+if ("h2o" %in% rownames(installed.packages())) { remove.packages("h2o") }
+
+# Next, we download packages that H2O depends on.
+pkgs <- c("RCurl","jsonlite")
+for (pkg in pkgs) {
+if (! (pkg %in% rownames(installed.packages()))) { install.packages(pkg) }
+}
+
+# Now we download, install and initialize the H2O package for R.
+install.packages("h2o", type="source", repos="http://h2o-release.s3.amazonaws.com/h2o/rel-zahradnik/2/R")
+
+# Finally, let's load H2O and start up an H2O cluster
+library(h2o)
+h2o.init()
+```
+
+Now we will load our data set downloaded from UCI https://archive.ics.uci.edu/ml/datasets/Breast+Cancer+Wisconsin+(Original)
+
+Attribute Information:
+
+1. Sample code number: id number
+2. Clump Thickness: 1 - 10
+3. Uniformity of Cell Size: 1 - 10
+4. Uniformity of Cell Shape: 1 - 10
+5. Marginal Adhesion: 1 - 10
+6. Single Epithelial Cell Size: 1 - 10
+7. Bare Nuclei: 1 - 10
+8. Bland Chromatin: 1 - 10
+9. Normal Nucleoli: 1 - 10
+10. Mitoses: 1 - 10
+11. Class: (2 for benign, 4 for malignant)
+```{r,data}
+bc <- read.csv("C:/Users/Cathy/Downloads/breast-cancer-wisconsin.csv", header = TRUE, strip.white=TRUE, col.names = c("Sample code number","Clump Thickness","Uniformity of Cell Size:","Uniformity of Cell Shape","Marginal Adhesion", "Single Epithelial", "Bare Nuclei", "Bland Chromatin", "Normal Nucleoli","Mitoses", "Diagnosis"))
+head(bc)
+```
+Now to, drop the sample number and call structure to gain some insight into our data: 
+```{r,str}
+bc<-subset(bc,select = -c(Sample.code.number))
+str(bc)
+```
+For some reason the bare.Neuclei was imported as chr, so we need to make a quick conversion to integer: 
+```{r,fixcol, error=FALSE}
+bc$Bare.Nuclei <- sapply(bc$Bare.Nuclei,as.integer)
+str(bc)
+```
+Ok now that we have uniformity we can move on to our data investigation and get some summary stats for a baseline as shown below: 
+```{r,SummaryStats}
+summary(bc)
+```
+We can see we have some incomplete obserations with the n.a. counts, in the bare Nuclei we will go ahead and remove all rows that have na values;at a loss of 16 observations this will not skew our data. 
+
+```{r, removNas}
+bc <- na.omit(bc)
+```
+
+Lastly, I'll convert the diagnoses to string and the actual diagnosis for ease for reading the results:
+```{r,trasnsform}
+library(dplyr)
+bc<-bc %>%
+  mutate(Diagnosis = ifelse(Diagnosis=="2", "benign", ifelse(Diagnosis=="4","malignant", NA)))
+head(bc)
+```
+
+```{r,SummaryAgain}
+summary(bc)
+```
+
+```{r}
+head(bc)
+```
+
+For our analysis, out independent variable will be our Diagnosis variable. Now we can get a quick idea of the amount of malignant and benign diagnoses: 
+
+We can see in the data there are 457 benign cases, and 241 malignant cases. So out of 698 diagnoses we;ve got 65% that are benign and so roughly there are 35% that are malignant which seems pretty high.
+
+```{r,vis}
+library(ggplot2)
+ggplot(bc, aes(x = Diagnosis, fill = Diagnosis))+
+  geom_bar()
+```
+We can get a look at clump thickness vs. diagnosis below: 
+```{r}
+library(tidyr)
+gather(bc, x, y,  Clump.Thickness) %>%
+  ggplot(aes(x = y, color = Diagnosis, fill = Diagnosis)) +
+    geom_density(alpha = 0.3) +
+    facet_wrap( ~ x, scales = "free", ncol = 3)
+```
+We can get this same view looking at the relationship to Uniformity.of.Cell.Shape
+
+```{r,cellShapePlot}
+gather(bc, x, y,  Uniformity.of.Cell.Shape) %>%
+  ggplot(aes(x = y, color = Diagnosis, fill = Diagnosis)) +
+    geom_density(alpha = 0.3) +
+    facet_wrap( ~ x, scales = "free", ncol = 3)
+```
+We can get this same view looking at the relationship to Uniformity.of.Cell.Size.
+```{r,viewSize}
+gather(bc, x, y,  Uniformity.of.Cell.Size.) %>%
+  ggplot(aes(x = y, color = Diagnosis, fill = Diagnosis)) +
+    geom_density(alpha = 0.3) +
+    facet_wrap( ~ x, scales = "free", ncol = 3)
+```
+With a quick view of our data, I could assume that clump Thickness has a strong relationship to diagnoses. Now that we've cleaned up the data and got a pulse using exploratory analysis. For the correlations in H20, I went ahead and converted our results to binary; where malignant = 1 and benign = 0 as shown below: 
+```{r,binary}
+bc1 <- bc %>%
+  mutate(Diagnosis = ifelse(Diagnosis=="benign", 0, ifelse(Diagnosis=="malignant",1, NA)))
+head(bc)
+```
+Initializing H20
+```{r,initialize, eval=FALSE}
+h2o.init(nthreads = -1)
+```
+Changing our binary breast cancer data into an H20 frame: 
+```{r,initializeAgain, eval=FALSE}
+bc1 <- as.h2o(bc1)
+```
+The below plot showing summary stats using H20, I've used guidance from the website below: 
+[1]https://www.shirin-glander.de/2018/06/intro_to_ml_workshop_heidelberg/
+Its helpful in gainin some insight into our data
+
+```{r,decribe,eval,warning=FALSE,eval=FALSE}
+h2o.describe(bc1) %>%
+  gather(x, y, Zeros:Sigma) %>%
+  mutate(group = ifelse(x %in% c("Min", "Max", "Mean"), "min, mean, max", 
+                        ifelse(x %in% c("NegInf", "PosInf"), "Inf", "sigma, zeros"))) %>% 
+  ggplot(aes(x = Label, y = as.numeric(y), color = x)) +
+    geom_point(size = 4, alpha = 0.6) +
+    scale_color_brewer(palette = "Set1") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    facet_grid(group ~ ., scales = "free") +
+    labs(x = "Feature",
+         y = "Value",
+         color = "")+
+  scale_y_continuous(
+  labels = scales::number_format(accuracy = 0.01))
+```
+Next we will get a heat map, of our corrlations for another visualization on the data [1], showing us that uniformity of cell size, uniformity of cell shape and bare.Nuclei are correlated higher to a positive diagnosis. 
+```{r,heatmap,eval=FALSE}
+library(reshape2) # for melting
+
+bc1[, 1] <- h2o.asfactor(bc1[, 1])
+
+cor <- h2o.cor(bc1)
+rownames(cor) <- colnames(cor)
+
+melt(cor) %>%
+  mutate(Var2 = rep(rownames(cor), nrow(cor))) %>%
+  mutate(Var2 = factor(Var2, levels = colnames(cor))) %>%
+  mutate(variable = factor(variable, levels = colnames(cor))) %>%
+  ggplot(aes(x = variable, y = Var2, fill = value)) + 
+    geom_tile(width = 0.9, height = 0.9) +
+    scale_fill_gradient2(low = "white", high = "blue", name = "Cor.") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+    labs(x = "", 
+         y = "")
+```
+Next We will start by training our data set
+```{r,testing,eval=FALSE}
+splits <- h2o.splitFrame(bc1, 
+                         ratios = c(0.7, 0.15), 
+                         seed = 1)
+
+train <- splits[[1]]
+valid <- splits[[2]]
+test <- splits[[3]]
+
+response <- "Diagnosis"
+features <- setdiff(colnames(train), response)
+```
+Now we can get a look at those splits on training set:
+```{r,viewTraining,eval=FALSE}
+summary(as.factor(train$Diagnosis), exact_quantiles = TRUE)
+```
+Showing that our benign contains 312, and our malignant has 167
+
+We will do the same for our validation and testing sets: 
+```{r,veiwTest,eval=FALSE}
+summary(as.factor(test$Diagnosis), exact_quantiles = TRUE)
+```
+
+```{r,ValidView,eval=FALSE}
+summary(as.factor(valid$Diagnosis), exact_quantiles = TRUE)
+```
+Now we will conduct some priciple component analysis on our sets: 
+```{r,PCA,eval=FALSE}
+pca <- h2o.prcomp(training_frame = train,
+           x = features,
+           validation_frame = valid,
+           transform = "NORMALIZE",
+           impute_missing = TRUE,
+           k = 3,
+           seed = 42)
+```
+Below we're assigning eigen vector values to our priciple component analysis, and get a view of our results.  Showing a relationship between mitoses, bare neuclei bland comatin and a positive diagnoses. 
+```{r,eigenPlot,eval=FALSE}
+ev <- as.data.frame(pca@model$eigenvectors)
+ev1 <- ev[-c(1:8),]
+ev1$label <- features
+
+library(ggrepel)
+ggplot(ev1, aes(x = pc1, y = pc2, label = label)) +
+  geom_point(color = "navy", alpha = 0.7) +
+  geom_text_repel()
+```
+We will next perform a random forest classification using H20.  Its important to understand the functionality of our hyperparameters, the description below was obtained from the h20 website at: https://www.h2o.ai/blog/hyperparameter-optimization-in-h2o-grid-search-random-search-and-the-future/
+
+Nearly all model algorithms used in machine learning have a set of tuning "knobs" which affect how the learning algorithm fits the model to the data. Examples are the regularization settings alpha and lambda for Generalized Linear Modeling or ntrees and max_depth for Gradient Boosted Models. These knobs are called hyperparameters to distinguish them from internal model parameters, such as GLM's beta coefficients or Deep Learning's weights, which get learned from the data during the model training process.:  
+```{r,randomForest}
+hyper_params <- list(
+                     ntrees = c(25, 50, 75, 100),
+                     max_depth = c(10, 20, 30),
+                     min_rows = c(1, 3, 5)
+                     )
+
+search_criteria <- list(
+                        strategy = "RandomDiscrete", 
+                        max_models = 50,
+                        max_runtime_secs = 360,
+                        stopping_rounds = 5,          
+                        stopping_metric = "AUC",      
+                        stopping_tolerance = 0.0005,
+                        seed = 42
+                        )
+```
+Now we will create our RF Grid, its important to note that we can change our model by assigning a different value to our algorithm function (h2o.random Forest,h2o.gbm for Gradient Boosting Trees )
+```{r,rfGrid,eval=FALSE}
+rf_grid <- h2o.grid(algorithm = "randomForest", 
+                    x = features,
+                    y = response,
+                    grid_id = "rf_grid",
+                    training_frame = train,
+                    validation_frame = valid,
+                    nfolds = 25,                           
+                    fold_assignment = "Stratified",
+                    hyper_params = hyper_params,
+                    search_criteria = search_criteria,
+                    seed = 42
+                    )
+```
+
+```{r,SortedBest,eval=FALSE}
+sorted_grid <- h2o.getGrid(grid_id = "rf_grid", sort_by = "mse")
+print(sorted_grid)
+best_model <- h2o.getModel(sorted_grid@model_ids[[1]])
+summary(best_model)
+```
+Viewing the best random forest model sorted by our mean squared error, we can see that we have a well suited model that would tell us again that uniformity of cell shape and size are highly related to a positive diagnosis. 
